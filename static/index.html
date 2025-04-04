@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.21.1/cytoscape.min.js"></script>
+    <title>Algoritmo de Dijkstra</title>
+</head>
+<body class="bg-gradient-to-br from-pink-300 to-rose-500 min-h-screen flex items-center justify-center">
+    <div class="bg-white shadow-xl rounded-3xl p-8 w-full max-w-2xl">
+        <h1 class="text-3xl font-extrabold text-center text-rose-600 mb-8">Algoritmo de Dijkstra</h1>
+        <form id="dijkstra-form" class="space-y-6">
+            <div>
+                <label for="nodos" class="block text-sm font-medium text-rose-700">Nodos (Separados por comas)</label>
+                <input type="text" id="nodos" class="w-full p-3 border border-rose-300 rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent placeholder-rose-300" placeholder="Ejemplo: A, B, C">
+            </div>
+            <div>
+                <label for="distancias" class="block text-sm font-medium text-rose-700">Distancias (Formato: A-B-4, B-C-3)</label>
+                <input type="text" id="distancias" class="w-full p-3 border border-rose-300 rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent placeholder-rose-300" placeholder="Ejemplo: A-B-4">
+            </div>
+            <div>
+                <label for="inicio" class="block text-sm font-medium text-rose-700">Nodo Inicial</label>
+                <input type="text" id="inicio" class="w-full p-3 border border-rose-300 rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent placeholder-rose-300" placeholder="Ejemplo: A">
+            </div>
+            <div>
+                <label for="final" class="block text-sm font-medium text-rose-700">Nodo Final</label>
+                <input type="text" id="final" class="w-full p-3 border border-rose-300 rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent placeholder-rose-300" placeholder="Ejemplo: C">
+            </div>
+            <div class="flex space-x-4">
+                <button type="submit" class="w-full bg-rose-600 text-white font-bold py-3 rounded-lg hover:bg-rose-700 shadow-lg transition duration-300">Calcular Ruta</button>
+                <button type="button" id="reset-button" class="w-full bg-rose-400 text-white font-bold py-3 rounded-lg hover:bg-rose-500 shadow-lg transition duration-300">Limpiar Campos</button>
+            </div>
+        </form>
+
+        <div id="resultado" class="mt-8 bg-pink-100 p-6 rounded-lg shadow-lg">
+            <h2 class="text-lg font-bold text-rose-600">Resultados:</h2>
+            <div id="resultado-contenido" class="text-rose-700 mt-4"></div>
+        </div>
+
+        <div id="cy" class="mt-8 border border-rose-300 rounded-lg" style="width: 100%; height: 400px;"></div>
+    </div>
+
+    <script>
+        const cy = cytoscape({
+            container: document.getElementById('cy'),
+            elements: [],
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-color': '#f9a8d4',
+                        'label': 'data(label)',
+                        'font-size': '16px',
+                        'color': '#6d28d9'
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'line-color': '#fcc2d7',
+                        'target-arrow-color': '#fcc2d7',
+                        'target-arrow-shape': 'triangle',
+                        'label': 'data(label)',
+                        'font-size': '14px',
+                        'color': '#7c2d12'
+                    }
+                }
+            ],
+            layout: { name: 'cose' }
+        });
+
+        document.getElementById('dijkstra-form').onsubmit = async (event) => {
+            event.preventDefault();
+
+            const nodos = document.getElementById('nodos').value.split(',').map(n => n.trim());
+            const distanciasInput = document.getElementById('distancias').value.split(',');
+            const inicio = document.getElementById('inicio').value.trim();
+            const final = document.getElementById('final').value.trim();
+
+            const distancias = {};
+            nodos.forEach(nodo => distancias[nodo] = {});
+
+            distanciasInput.forEach(d => {
+                const [origen, destino, peso] = d.split('-').map(item => item.trim());
+                distancias[origen][destino] = parseInt(peso, 10);
+            });
+
+            nodos.forEach(nodo => {
+                if (!cy.$id(nodo).length) {
+                    cy.add({ data: { id: nodo, label: nodo } });
+                }
+            });
+
+            distanciasInput.forEach(d => {
+                const [origen, destino, peso] = d.split('-').map(item => item.trim());
+                if (!cy.$(`edge[source="${origen}"][target="${destino}"]`).length) {
+                    cy.add({
+                        data: {
+                            source: origen,
+                            target: destino,
+                            label: peso
+                        }
+                    });
+                }
+            });
+
+            cy.layout({ name: 'cose' }).run();
+
+            try {
+                const respuesta = await fetch('/calcular_ruta', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nodos, distancias, inicio, final })
+                });
+
+                if (respuesta.ok) {
+                    const { camino, distancias } = await respuesta.json();
+
+                    camino.reduce((prev, curr) => {
+                        const edge = cy.$(`edge[source="${prev}"][target="${curr}"]`);
+                        if (edge.length) {
+                            edge.style('line-color', '#e11d48');
+                            edge.style('target-arrow-color', '#e11d48');
+                        }
+                        cy.$id(curr).style('background-color', '#f43f5e');
+                        return curr;
+                    });
+
+                    document.getElementById('resultado-contenido').innerHTML = `
+                        <p><strong>Camino más corto:</strong> ${camino.join(' -> ')}</p>
+                        <p><strong>Distancias:</strong> ${camino.map(nodo => `${nodo}: ${distancias[nodo]}`).join(', ')}</p>
+                    `;
+                } else {
+                    const error = await respuesta.json();
+                    document.getElementById('resultado-contenido').innerHTML = `<p class="text-red-600">Error: ${error.error}</p>`;
+                }
+            } catch (error) {
+                document.getElementById('resultado-contenido').innerHTML = `<p class="text-red-600">Error de conexión: ${error.message}</p>`;
+            }
+        };
+
+        document.getElementById('reset-button').addEventListener('click', () => {
+            document.getElementById('nodos').value = '';
+            document.getElementById('distancias').value = '';
+            document.getElementById('inicio').value = '';
+            document.getElementById('final').value = '';
+            document.getElementById('resultado-contenido').innerHTML = '';
+            cy.elements().remove(); // Limpia el grafo
+        });
+    </script>
+</body>
+</html>
